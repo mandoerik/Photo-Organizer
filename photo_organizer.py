@@ -17,14 +17,8 @@ Features:
 
 import os
 import sys
-import shutil
-import locale
-from datetime import datetime
-from PIL import Image
 from tkinter import *
-from tkinter import filedialog, ttk
-from tkinter import PhotoImage
-import threading
+from tkinter import ttk
 
 class PhotoOrganizerApp:
     def __init__(self, root):
@@ -33,6 +27,14 @@ class PhotoOrganizerApp:
         self.root.minsize(800, 900)  # Set minimum size
         self.root.geometry("800x900")  # Set fixed starting size
         self.root.resizable(False, False)
+        
+        # Move heavy imports to class variables
+        self._PIL = None
+        self._shutil = None
+        self._locale = None
+        self._datetime = None
+        self._filedialog = None
+        self._threading = None
         
         # App information
         self.app_info = {
@@ -74,6 +76,31 @@ class PhotoOrganizerApp:
         self.total_files = 0
         
         self.setup_gui()
+        self.lazy_load_locale()  # Changed from detect_system_language()
+
+    def lazy_load_imports(self):
+        """Lazy load heavy imports only when needed"""
+        if self._PIL is None:
+            from PIL import Image
+            self._PIL = Image
+        if self._shutil is None:
+            import shutil
+            self._shutil = shutil
+        if self._datetime is None:
+            from datetime import datetime
+            self._datetime = datetime
+        if self._filedialog is None:
+            from tkinter import filedialog
+            self._filedialog = filedialog
+        if self._threading is None:
+            import threading
+            self._threading = threading
+
+    def lazy_load_locale(self):
+        """Lazy load locale for language detection"""
+        if self._locale is None:
+            import locale
+            self._locale = locale
         self.detect_system_language()
 
     def setup_gui(self):
