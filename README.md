@@ -69,9 +69,6 @@ destination_folder/
 4. Click "Start Organization" to begin
 5. Monitor progress in the status bar
 
-</td>
-<td width="30%">
-<img src="https://github.com/user-attachments/assets/0afd8827-371d-4f81-810a-47e8b5a1ece9" alt="Photo Organizer Interface" />
-</td>
-</tr>
-</table>
+<img src="https://github.com/user-attachments/assets/4c52c544-dc83-4d8e-8b8c-f1d69b7173d0" alt="Photo Organizer Interface" width="75%"/>
+
+
