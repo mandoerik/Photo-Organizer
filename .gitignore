@@ -15,7 +15,7 @@ build/
 
 # PyInstaller
 *.manifest
-*.spec
+# *.spec  # Commented out to allow .spec files
 
 # macOS system files
 .DS_Store
