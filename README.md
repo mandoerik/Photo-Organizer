@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Photo-Organizer</h1>
+  <h1>Photo & Video Organizer</h1>
   <p>A clean, intuitive tool for organizing your media files on macOS</p>
 </div>
 
@@ -55,7 +55,7 @@ destination_folder/
 
 ## Installation
 1. Download the latest release from our [Releases](link-to-releases) page
-2. Extract Photo-Organizer.zip
+2. Extract Photo & Video Organizer.zip
 3. Move Photo Organizer.app to your Applications folder
 
 ## Usage
