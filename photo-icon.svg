@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <!-- Background -->
+    <rect x="0" y="0" width="512" height="512" rx="60" fill="#4a90e2"/>
+    
+    <!-- Photo Stack -->
+    <rect x="126" y="146" width="300" height="250" rx="15" 
+          fill="#ffffff" transform="rotate(-15 276 271)"/>
+    <rect x="106" y="126" width="300" height="250" rx="15" 
+          fill="#f8f8f8" transform="rotate(-8 256 251)"/>
+    <rect x="86" y="106" width="300" height="250" rx="15" 
+          fill="#ffffff"/>
+    
+    <!-- Photo Elements -->
+    <circle cx="166" cy="176" r="20" fill="#4a90e2"/>
+    <path d="M86 256 L186 206 L286 286 L386 196 L386 336 L86 336 Z" 
+          fill="#4a90e2" opacity="0.7"/>
+    
+    <!-- Mountains in Photo -->
+    <path d="M86 286 L186 196 L236 236 L386 136 L386 336 L86 336 Z" 
+          fill="#2d74c4" opacity="0.3"/>
+</svg>

@@ -13,14 +13,14 @@ dist/
 build/
 *.egg-info/
 
-# PyInstaller
-*.manifest
-# *.spec  # Commented out to allow .spec files
+# Icon generation files
+icon_1024.png
+photo_organizer.iconset/
+*.iconset
 
 # macOS system files
 .DS_Store
-.AppleDouble
-.LSOverride
+.git
 ._*
 
 # IDE specific files
