@@ -1,6 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-
-
 a = Analysis(
     ['photo_organizer.py'],
     pathex=[],
@@ -15,7 +13,6 @@ a = Analysis(
     optimize=0,
 )
 pyz = PYZ(a.pure)
-
 exe = EXE(
     pyz,
     a.scripts,
@@ -41,5 +38,19 @@ app = BUNDLE(
     exe,
     name='photo_organizer.app',
     icon='photo_organizer.icns',
-    bundle_identifier=None,
+    bundle_identifier='com.express-it.photoorganizer',
+    info_plist={
+        'CFBundleName': 'Photo Organizer',
+        'CFBundleDisplayName': 'Photo Organizer',
+        'CFBundleGetInfoString': "Photo & Video Organizer",
+        'CFBundleVersion': "1.2",
+        'CFBundleShortVersionString': "1.2",
+        'NSHighResolutionCapable': True,
+        'LSBackgroundOnly': False,
+        'NSRequiresAquaSystemAppearance': False,
+        'LSEnvironment': {
+            'LANG': 'en_US.UTF-8',
+            'LC_ALL': 'en_US.UTF-8',
+        }
+    },
 )

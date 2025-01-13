@@ -20,6 +20,19 @@ import sys
 from tkinter import *
 from tkinter import ttk
 
+# Initialize NSApplication immediately at import time for macOS
+if sys.platform == "darwin":
+    try:
+        from Foundation import NSBundle
+        from AppKit import NSApplication, NSImage
+        # Initialize NSApplication right away
+        NSApplication.sharedApplication()
+        # Activate the application
+        app = NSApplication.sharedApplication()
+        app.activateIgnoringOtherApps_(True)
+    except ImportError:
+        pass
+
 class PhotoOrganizerApp:
     def __init__(self, root):
         self.root = root
@@ -581,18 +594,36 @@ class PhotoOrganizerApp:
         self.start_button['state'] = 'normal'
         self.cancel_button['state'] = 'disabled'
 
+def setup_macos_dock():
+    """Set up macOS dock icon and process name"""
+    if sys.platform == "darwin":
+        try:
+            # Get the bundle's icon file path
+            bundle = NSBundle.mainBundle()
+            if bundle:
+                icon_path = bundle.pathForResource_ofType_("photo_organizer", "icns")
+                if icon_path:
+                    icon = NSImage.alloc().initWithContentsOfFile_(icon_path)
+                    NSApplication.sharedApplication().setApplicationIconImage_(icon)
+                    
+                # Set the process name to match the app name
+                info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+                if info and info.get('CFBundleName'):
+                    NSApplication.sharedApplication().setActivationPolicy_(0)  # Regular application
+        except Exception as e:
+            print(f"Error setting up macOS dock icon: {e}")
+
 if __name__ == "__main__":
+    # Set up macOS dock icon before creating the Tkinter window
+    if sys.platform == "darwin":
+        setup_macos_dock()
+    
     root = Tk()
     try:
-        if sys.platform == "darwin":  # macOS
-            # On macOS, the .icns file should be part of the app bundle
-            # The icon will be picked up automatically when bundled
-            pass
-        else:
-            # For Windows/Linux, using .png as fallback
+        if sys.platform != "darwin":
             root.wm_iconphoto(True, PhotoImage(file="photo_organizer.png"))
     except:
-        pass  # If icon loading fails, continue without an icon
+        pass
     
     app = PhotoOrganizerApp(root)
     root.mainloop()
