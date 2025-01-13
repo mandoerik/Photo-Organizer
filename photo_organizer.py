@@ -52,7 +52,7 @@ class PhotoOrganizerApp:
         # App information
         self.app_info = {
             'name': 'Photo & Video Organizer',
-            'version': '1.2',
+            'version': '1.0.1',
             'year': '2024',
             'company': 'Express it Vendelso AB',
             'email': 'info@express-it.se'
