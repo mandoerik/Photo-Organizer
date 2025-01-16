@@ -402,20 +402,23 @@ class PhotoOrganizerApp:
 
     def browse_source(self):
         """Open dialog to select source folder"""
-        folder = filedialog.askdirectory()
+        self.lazy_load_imports()  # Make sure filedialog is loaded
+        folder = self._filedialog.askdirectory()
         if folder:
             self.source_path.set(folder)
             self.update_file_count()
 
     def browse_photo_dest(self):
         """Open dialog to select photo destination folder"""
-        folder = filedialog.askdirectory()
+        self.lazy_load_imports()  # Make sure filedialog is loaded
+        folder = self._filedialog.askdirectory()
         if folder:
             self.photo_dest_path.set(folder)
 
     def browse_video_dest(self):
         """Open dialog to select video destination folder"""
-        folder = filedialog.askdirectory()
+        self.lazy_load_imports()  # Make sure filedialog is loaded
+        folder = self._filedialog.askdirectory()
         if folder:
             self.video_dest_path.set(folder)
 
@@ -438,26 +441,28 @@ class PhotoOrganizerApp:
 
     def get_media_date(self, file_path):
         """Get the creation date of a media file"""
+        self.lazy_load_imports()  # Ensure modules are loaded
+        
         try:
             # Try to get EXIF data for photos
             if file_path.lower().endswith(self.photo_extensions):
-                with Image.open(file_path) as img:
+                with self._PIL.open(file_path) as img:
                     exif = img._getexif()
                     if exif:
                         # Look for DateTimeOriginal or DateTime tag
                         for tag_id in (36867, 306):  # EXIF tags for dates
                             if tag_id in exif:
                                 date_str = exif[tag_id]
-                                return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                                return self._datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
             
             # Fall back to file modification time
             timestamp = os.path.getmtime(file_path)
-            return datetime.fromtimestamp(timestamp)
+            return self._datetime.fromtimestamp(timestamp)
             
         except Exception as e:
             print(f"Error getting date for {file_path}: {str(e)}")
             # Return current date if all methods fail
-            return datetime.now()
+            return self._datetime.now()
 
     def get_localized_month(self, date):
         """Get month name in current language"""
@@ -494,13 +499,19 @@ class PhotoOrganizerApp:
         self.progress['value'] = 0
         self.processed_files = 0
         
+        # Make sure threading is loaded
+        self.lazy_load_imports()
+        
         # Run in separate thread to keep GUI responsive
-        thread = threading.Thread(target=self.organize_files)
+        thread = self._threading.Thread(target=self.organize_files)
         thread.daemon = True
         thread.start()
 
     def organize_files(self):
         """Main function to organize files"""
+        # Ensure all required modules are loaded
+        self.lazy_load_imports()
+        
         source = self.source_path.get()
         photo_dest = self.photo_dest_path.get()
         video_dest = self.video_dest_path.get() if self.separate_videos.get() else photo_dest
@@ -559,9 +570,9 @@ class PhotoOrganizerApp:
 
                 # Move or copy file based on checkbox selection
                 if should_delete:
-                    shutil.move(file_path, dest_path)
+                    self._shutil.move(file_path, dest_path)
                 else:
-                    shutil.copy2(file_path, dest_path)
+                    self._shutil.copy2(file_path, dest_path)
                 
                 # Update progress
                 self.processed_files += 1
