@@ -1,22 +1,36 @@
 # -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
 a = Analysis(
     ['photo_organizer.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'PIL',
+        'PIL._imagingtk',
+        'PIL._tkinter_finder',
+        'tkinter',
+        'tkinter.ttk',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
-    optimize=0,
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
     [],
     name='photo_organizer',
@@ -32,25 +46,25 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['photo_organizer.icns'],
+    icon='photo_organizer.icns'
 )
+
+# macOS specific bundle configuration
 app = BUNDLE(
     exe,
-    name='photo_organizer.app',
+    name='Photo Organizer.app',
     icon='photo_organizer.icns',
-    bundle_identifier='com.express-it.photoorganizer',
+    bundle_identifier='se.express-it.photo-organizer',
     info_plist={
-        'CFBundleName': 'Photo Organizer',
-        'CFBundleDisplayName': 'Photo Organizer',
-        'CFBundleGetInfoString': "Photo & Video Organizer",
-        'CFBundleVersion': "1.2",
-        'CFBundleShortVersionString': "1.2",
-        'NSHighResolutionCapable': True,
-        'LSBackgroundOnly': False,
-        'NSRequiresAquaSystemAppearance': False,
         'LSEnvironment': {
             'LANG': 'en_US.UTF-8',
             'LC_ALL': 'en_US.UTF-8',
-        }
-    },
+        },
+        'CFBundleName': 'Photo Organizer',
+        'CFBundleDisplayName': 'Photo Organizer',
+        'CFBundleGetInfoString': 'Photo & Video Organization Tool',
+        'CFBundleVersion': '1.2',
+        'CFBundleShortVersionString': '1.2',
+        'NSHighResolutionCapable': True,
+    }
 )
