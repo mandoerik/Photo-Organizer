@@ -29,8 +29,8 @@ class PhotoOrganizerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Photo & Video Organizer")
-        self.root.minsize(800, 900)  # Set minimum size
-        self.root.geometry("800x900")  # Set fixed starting size
+        self.root.minsize(800, 900)
+        self.root.geometry("800x900")
         self.root.resizable(False, False)
 
         # Lazy load PIL (heavy dependency)
@@ -612,15 +612,35 @@ class PhotoOrganizerApp:
 
 
 if __name__ == "__main__":
+    # Enable DPI awareness on Windows for crisp text and UI
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            # System DPI aware (1) - Windows scales the window automatically
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
     root = Tk()
+
+    # Set application icon
     try:
-        if sys.platform == "darwin":  # macOS
-            # On macOS, the .icns file should be part of the app bundle
-            # The icon will be picked up automatically when bundled
+        if sys.platform == "darwin":
+            # On macOS, the .icns file is part of the app bundle
             pass
+        elif sys.platform == "win32":
+            # On Windows, use .ico file (works with both bundled and dev mode)
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photo_organizer.ico")
+            if os.path.exists(icon_path):
+                root.iconbitmap(icon_path)
         else:
-            # For Windows/Linux, using .png as fallback
-            root.wm_iconphoto(True, PhotoImage(file="photo_organizer.png"))
+            # Linux fallback using .png
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photo_organizer.png")
+            if os.path.exists(icon_path):
+                root.wm_iconphoto(True, PhotoImage(file=icon_path))
     except Exception:
         pass  # If icon loading fails, continue without an icon
 
