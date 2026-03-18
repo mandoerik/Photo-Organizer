@@ -414,19 +414,22 @@ class PhotoOrganizerApp:
 
     def get_media_date(self, file_path):
         """Get the creation date of a media file"""
-        self._load_pil()
-
         try:
             # Try to get EXIF data for photos
             if file_path.lower().endswith(self.photo_extensions):
+                self._load_pil()
                 with self._PIL.open(file_path) as img:
                     exif = img.getexif()
                     if exif:
-                        # Look for DateTimeOriginal or DateTime tag
-                        for tag_id in (36867, 306):  # EXIF tags for dates
-                            if tag_id in exif:
-                                date_str = exif[tag_id]
-                                return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                        # Check root IFD for DateTime (tag 306)
+                        if 306 in exif:
+                            date_str = exif[306]
+                            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                        # Check Exif sub-IFD for DateTimeOriginal (tag 36867)
+                        exif_ifd = exif.get_ifd(0x8769)
+                        if exif_ifd and 36867 in exif_ifd:
+                            date_str = exif_ifd[36867]
+                            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
 
             # Fall back to file modification time
             timestamp = os.path.getmtime(file_path)
@@ -452,6 +455,11 @@ class PhotoOrganizerApp:
     def _validate_paths(self):
         """Validate source and destination paths before organizing."""
         source = os.path.realpath(self.source_path.get())
+
+        if not os.path.isdir(source):
+            self.status_var.set("Error: Source folder does not exist.")
+            return False
+
         photo_dest = os.path.realpath(self.photo_dest_path.get()) if self.photo_dest_path.get() else ''
         video_dest = os.path.realpath(self.video_dest_path.get()) if self.video_dest_path.get() else ''
 
@@ -500,7 +508,7 @@ class PhotoOrganizerApp:
         thread.daemon = True
         thread.start()
 
-    def _update_progress(self, processed, total, filename, done=False, cancelled=False):
+    def _update_progress(self, processed, total, filename, done=False, cancelled=False, errors=0):
         """Schedule a UI update on the main thread (thread-safe)."""
         def _do_update():
             self.progress['value'] = processed
@@ -511,7 +519,8 @@ class PhotoOrganizerApp:
                 self.cancel_button['state'] = 'disabled'
             elif done:
                 action_text = "moved" if self.delete_files.get() else "copied"
-                self.status_var.set(f"Organization completed! {processed} files have been {action_text}.")
+                error_text = f" ({errors} failed)" if errors else ""
+                self.status_var.set(f"Organization completed! {processed - errors} files have been {action_text}.{error_text}")
                 self.start_button['state'] = 'normal'
                 self.cancel_button['state'] = 'disabled'
             else:
@@ -520,8 +529,6 @@ class PhotoOrganizerApp:
 
     def organize_files(self):
         """Main function to organize files"""
-        self._load_pil()
-
         source = self.source_path.get()
         photo_dest = self.photo_dest_path.get()
         video_dest = self.video_dest_path.get() if self.separate_videos.get() else photo_dest
@@ -540,14 +547,22 @@ class PhotoOrganizerApp:
             extensions = self.video_extensions
 
         files = []
-        for root, _, filenames in os.walk(source):
+        for dirpath, _, filenames in os.walk(source):
             for filename in filenames:
                 if filename.lower().endswith(extensions):
-                    files.append(os.path.join(root, filename))
+                    files.append(os.path.join(dirpath, filename))
 
         self.total_files = len(files)
+
+        if self.total_files == 0:
+            self.root.after(0, lambda: self.status_var.set("No matching files found in source folder."))
+            self.root.after(0, lambda: self.start_button.configure(state='normal'))
+            self.root.after(0, lambda: self.cancel_button.configure(state='disabled'))
+            return
+
         self.root.after(0, lambda: self.progress.configure(maximum=self.total_files))
         self.processed_files = 0
+        error_count = 0
 
         for file_path in files:
             # Check if cancellation was requested
@@ -584,15 +599,16 @@ class PhotoOrganizerApp:
                 else:
                     shutil.copy2(file_path, dest_path)
 
-                # Update progress (thread-safe)
-                self.processed_files += 1
-                self._update_progress(self.processed_files, self.total_files, filename)
-
             except Exception as e:
                 print(f"Error {'moving' if should_delete else 'copying'} {file_path}: {str(e)}")
+                error_count += 1
+
+            # Update progress (thread-safe) — always increment, even on error
+            self.processed_files += 1
+            self._update_progress(self.processed_files, self.total_files, os.path.basename(file_path))
 
         if not self.cancel_flag:
-            self._update_progress(self.processed_files, self.total_files, '', done=True)
+            self._update_progress(self.processed_files, self.total_files, '', done=True, errors=error_count)
 
 
 if __name__ == "__main__":
