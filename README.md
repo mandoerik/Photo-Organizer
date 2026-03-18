@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Photo & Video Organizer</h1>
-  <p>A clean, intuitive tool for organizing your media files on macOS</p>
+  <p>A clean, intuitive tool for organizing your media files on macOS and Windows</p>
 </div>
 
 <table>
@@ -54,9 +54,20 @@ destination_folder/
 ```
 
 ## Installation
+
+### macOS
 1. Download the latest release from our [Releases](https://github.com/mandoerik/Photo-Organizer/releases) page
 2. Extract Photo & Video Organizer.zip
 3. Move Photo Organizer.app to your Applications folder
+
+### Windows
+1. Download `PhotoOrganizer.exe` from the [Releases](https://github.com/mandoerik/Photo-Organizer/releases) page
+2. Run the executable — no installation required
+
+### Building from Source (Windows)
+1. Install Python 3.10+ from [python.org](https://python.org)
+2. Clone the repository and run `build_windows.bat`
+3. The executable will be in the `dist/` folder
 
 ## Usage
 1. Launch Photo Organizer
