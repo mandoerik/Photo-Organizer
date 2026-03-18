@@ -456,8 +456,16 @@ class PhotoOrganizerApp:
         video_dest = os.path.realpath(self.video_dest_path.get()) if self.video_dest_path.get() else ''
 
         for dest in (photo_dest, video_dest):
-            if dest and (source == dest or dest.startswith(source + os.sep)):
+            if not dest:
+                continue
+            if source == dest:
+                self.status_var.set("Error: Source and destination folders cannot be the same.")
+                return False
+            if dest.startswith(source + os.sep):
                 self.status_var.set("Error: Destination folder cannot be inside the source folder.")
+                return False
+            if source.startswith(dest + os.sep):
+                self.status_var.set("Error: Source folder is inside the destination. Files could be reorganized into themselves.")
                 return False
         return True
 
