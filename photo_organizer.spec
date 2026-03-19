@@ -1,18 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import customtkinter
+
 block_cipher = None
 
 a = Analysis(
     ['photo_organizer.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[(os.path.dirname(customtkinter.__file__), 'customtkinter/')],
     hiddenimports=[
         'PIL',
         'PIL._imagingtk',
         'PIL._tkinter_finder',
         'tkinter',
         'tkinter.ttk',
+        'customtkinter',
     ],
     hookspath=[],
     hooksconfig={},
@@ -63,8 +66,8 @@ app = BUNDLE(
         'CFBundleName': 'Photo Organizer',
         'CFBundleDisplayName': 'Photo Organizer',
         'CFBundleGetInfoString': 'Photo & Video Organization Tool',
-        'CFBundleVersion': '1.2',
-        'CFBundleShortVersionString': '1.2',
+        'CFBundleVersion': '2.0',
+        'CFBundleShortVersionString': '2.0',
         'NSHighResolutionCapable': True,
     }
 )

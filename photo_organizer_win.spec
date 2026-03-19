@@ -1,18 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import customtkinter
+
 block_cipher = None
 
 a = Analysis(
     ['photo_organizer.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[(os.path.dirname(customtkinter.__file__), 'customtkinter/')],
     hiddenimports=[
         'PIL',
         'PIL._imagingtk',
         'PIL._tkinter_finder',
         'tkinter',
         'tkinter.ttk',
+        'customtkinter',
     ],
     hookspath=[],
     hooksconfig={},

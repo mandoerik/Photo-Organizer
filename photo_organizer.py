@@ -13,6 +13,7 @@ Features:
 - Handles duplicate filenames
 - Supports English and Swedish folder naming
 - Option to remove source files after organization
+- Modern CustomTkinter UI with dark/light mode
 """
 
 import locale
@@ -21,17 +22,39 @@ import shutil
 import sys
 import threading
 from datetime import datetime
-from tkinter import Tk, Toplevel, StringVar, BooleanVar, PhotoImage, N, W, E, S, BOTH
-from tkinter import filedialog, ttk
+
+import customtkinter as ctk
+from tkinter import filedialog, StringVar, BooleanVar
+
+
+# --- Color Palette ---
+COLORS = {
+    "accent": "#4A90D9",
+    "accent_hover": "#3A7BC8",
+    "success": "#27AE60",
+    "warning": "#F39C12",
+    "error": "#E74C3C",
+    "card_dark": "#1E1E2E",
+    "card_light": "#FFFFFF",
+    "subtle_dark": "#2A2A3C",
+    "subtle_light": "#F0F2F5",
+    "border_dark": "#3A3A4C",
+    "border_light": "#D1D5DB",
+    "text_secondary_dark": "#8B8FA3",
+    "text_secondary_light": "#6B7280",
+}
 
 
 class PhotoOrganizerApp:
-    def __init__(self, root):
-        self.root = root
+    def __init__(self):
+        # Theme & appearance
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+
+        self.root = ctk.CTk()
         self.root.title("Photo & Video Organizer")
-        self.root.minsize(800, 900)
-        self.root.geometry("800x900")
-        self.root.resizable(False, False)
+        self.root.geometry("720x860")
+        self.root.minsize(680, 820)
 
         # Lazy load PIL (heavy dependency)
         self._PIL = None
@@ -39,23 +62,31 @@ class PhotoOrganizerApp:
         # App information
         self.app_info = {
             'name': 'Photo & Video Organizer',
-            'version': '1.2',
+            'version': '2.0',
             'year': '2024',
             'company': 'Express it Vendelso AB',
             'email': 'info@express-it.se'
         }
 
-        # Add cancellation flag
+        # Cancellation flag
         self.cancel_flag = False
 
-        # Define supported file types
+        # Supported file types
         self.photo_extensions = ('.jpg', '.jpeg', '.png', '.gif')
         self.video_extensions = ('.mp4', '.mov', '.avi')
 
-        # Initialize file type selection
+        # Variables
         self.file_type_selection = StringVar(value='all')
+        self.language_var = StringVar(value='English')
+        self.source_path = StringVar()
+        self.photo_dest_path = StringVar()
+        self.video_dest_path = StringVar()
+        self.separate_videos = BooleanVar(value=False)
+        self.delete_files = BooleanVar(value=False)
+        self.status_var = StringVar(value="Ready")
+        self.counter_var = StringVar(value="0 / 0 files")
 
-        # Define month translations
+        # Month translations
         self.month_translations = {
             'English': {
                 'January': 'January', 'February': 'February', 'March': 'March',
@@ -71,190 +102,353 @@ class PhotoOrganizerApp:
             }
         }
 
-        # Initialize counters
+        # Counters
         self.processed_files = 0
         self.total_files = 0
 
-        self.setup_gui()
+        self._build_ui()
         self.detect_system_language()
 
     def _load_pil(self):
-        """Lazy load PIL only when needed (heavy dependency)"""
+        """Lazy load PIL only when needed"""
         if self._PIL is None:
             from PIL import Image
             self._PIL = Image
 
-    def setup_gui(self):
-        # Create main container with padding
-        self.main_container = ttk.Frame(self.root, padding="20")
-        self.main_container.grid(row=0, column=0, sticky=(N, W, E, S))
-
-        # Configure styles for a more modern look
-        style = ttk.Style()
-        style.configure('Header.TLabel', font=('Helvetica', 16, 'bold'))
-        style.configure('SubHeader.TLabel', font=('Helvetica', 12))
-        style.configure('Description.TLabel', font=('Helvetica', 11), wraplength=700)
-
-        # Header and Description Frame
-        header_frame = ttk.Frame(self.main_container)
-        header_frame.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky=(W, E))
-
-        # Header container for title and about button
-        header_container = ttk.Frame(header_frame)
-        header_container.grid(row=0, column=0, sticky=(W, E))
-        header_container.columnconfigure(1, weight=1)
-
-        # App title
-        ttk.Label(header_container, text="Photo & Video Organizer", style='Header.TLabel').grid(row=0, column=0, sticky=W)
-
-        # About button
-        about_button = ttk.Button(header_container, text="About", command=self.show_about_dialog, width=8)
-        about_button.grid(row=0, column=1, sticky=E, padx=(0, 5))
-
-        # Description box
-        desc_frame = ttk.LabelFrame(header_frame, padding="15")
-        desc_frame.grid(row=1, column=0, sticky=(W, E), pady=(10, 0))
-
-        description_text = (
-            "Automatically organize your photos and videos into a clean folder structure based on when they "
-            "were taken. The app creates Year/Month folders and sorts your media files accordingly, making "
-            "it easy to find and manage your memories. Simply select your source folder containing media "
-            "files and choose where you want them organized."
+    # ------------------------------------------------------------------ UI --
+    def _build_ui(self):
+        """Build the complete modern UI."""
+        # Main scrollable container
+        self.main_frame = ctk.CTkScrollableFrame(
+            self.root, fg_color="transparent",
         )
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
+        self.main_frame.columnconfigure(0, weight=1)
 
-        ttk.Label(
-            desc_frame,
-            text=description_text,
-            style='Description.TLabel'
-        ).grid(row=0, column=0, sticky=(W, E))
+        row = 0
 
-        # File type selection frame
-        filetype_frame = ttk.LabelFrame(self.main_container, text="File Type Selection", padding="10")
-        filetype_frame.grid(row=1, column=0, columnspan=2, sticky=(W, E), pady=(0, 20))
+        # ---- Header bar ----
+        header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        header.grid(row=row, column=0, sticky="ew", pady=(0, 4))
+        header.columnconfigure(0, weight=1)
 
-        ttk.Radiobutton(
-            filetype_frame,
-            text="All Files (Photos and Videos)",
-            variable=self.file_type_selection,
-            value='all',
-            command=self.update_file_type_selection
-        ).grid(row=0, column=0, sticky=W, padx=5)
+        ctk.CTkLabel(
+            header, text="Photo & Video Organizer",
+            font=ctk.CTkFont(size=26, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
 
-        ttk.Radiobutton(
-            filetype_frame,
-            text="Photos Only",
-            variable=self.file_type_selection,
-            value='photos',
-            command=self.update_file_type_selection
-        ).grid(row=0, column=1, sticky=W, padx=5)
+        # Theme toggle + About
+        btn_group = ctk.CTkFrame(header, fg_color="transparent")
+        btn_group.grid(row=0, column=1, sticky="e")
 
-        ttk.Radiobutton(
-            filetype_frame,
-            text="Videos Only",
-            variable=self.file_type_selection,
-            value='videos',
-            command=self.update_file_type_selection
-        ).grid(row=0, column=2, sticky=W, padx=5)
-
-        # Language selection
-        lang_frame = ttk.LabelFrame(self.main_container, text="Language Settings", padding="10")
-        lang_frame.grid(row=2, column=0, columnspan=2, sticky=(W, E), pady=(0, 20))
-
-        self.language_var = StringVar(value='English')
-        ttk.Label(lang_frame, text="Folder Names Language:").grid(row=0, column=0, padx=5)
-        self.lang_dropdown = ttk.Combobox(
-            lang_frame,
-            textvariable=self.language_var,
-            values=['English', 'Swedish'],
-            state='readonly'
+        self.theme_btn = ctk.CTkButton(
+            btn_group, text="Light", width=70, height=30,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent", border_width=1,
+            border_color=COLORS["border_dark"],
+            hover_color=COLORS["subtle_dark"],
+            command=self._toggle_theme,
         )
-        self.lang_dropdown.grid(row=0, column=1, padx=5)
+        self.theme_btn.pack(side="left", padx=(0, 8))
 
-        # System language detection display
-        self.language_label = ttk.Label(lang_frame, text="Detected language: ", style='SubHeader.TLabel')
-        self.language_label.grid(row=0, column=2, padx=(20, 0))
+        ctk.CTkButton(
+            btn_group, text="About", width=70, height=30,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent", border_width=1,
+            border_color=COLORS["border_dark"],
+            hover_color=COLORS["subtle_dark"],
+            command=self.show_about_dialog,
+        ).pack(side="left")
 
-        # Folder selection frame
-        folder_frame = ttk.LabelFrame(self.main_container, text="Folder Selection", padding="10")
-        folder_frame.grid(row=3, column=0, columnspan=2, sticky=(W, E), pady=(0, 20))
+        row += 1
 
-        # Source folder
-        ttk.Label(folder_frame, text="Source Folder:").grid(row=0, column=0, sticky=W, pady=5)
-        self.source_path = StringVar()
-        ttk.Entry(folder_frame, textvariable=self.source_path, width=50).grid(row=1, column=0, padx=5)
-        ttk.Button(folder_frame, text="Browse", command=self.browse_source).grid(row=1, column=1)
+        # ---- Description ----
+        desc_text = (
+            "Automatically organize your photos and videos into a clean Year / Month "
+            "folder structure based on when they were taken."
+        )
+        ctk.CTkLabel(
+            self.main_frame, text=desc_text, wraplength=640,
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary_dark"],
+            justify="left",
+        ).grid(row=row, column=0, sticky="w", pady=(0, 16))
 
-        # Photo destination folder — store references for toggling
-        self.photo_dest_label = ttk.Label(folder_frame, text="Photo Destination Folder:")
-        self.photo_dest_label.grid(row=2, column=0, sticky=W, pady=5)
-        self.photo_dest_path = StringVar()
-        self.photo_dest_entry = ttk.Entry(folder_frame, textvariable=self.photo_dest_path, width=50)
-        self.photo_dest_entry.grid(row=3, column=0, padx=5)
-        self.photo_dest_button = ttk.Button(folder_frame, text="Browse", command=self.browse_photo_dest)
-        self.photo_dest_button.grid(row=3, column=1)
+        row += 1
 
-        # Separate videos checkbox
-        self.separate_videos = BooleanVar()
-        self.separate_videos.set(False)
-        self.separate_videos_check = ttk.Checkbutton(
-            folder_frame,
-            text="Separate videos to different destination",
+        # ---- File Type Card ----
+        row = self._card_file_type(row)
+
+        # ---- Language Card ----
+        row = self._card_language(row)
+
+        # ---- Folders Card ----
+        row = self._card_folders(row)
+
+        # ---- Options Card ----
+        row = self._card_options(row)
+
+        # ---- Progress Card ----
+        row = self._card_progress(row)
+
+        # ---- Action Buttons ----
+        self._action_buttons(row)
+
+    # -- Cards -----------------------------------------------------------------
+
+    def _make_card(self, parent, title, row):
+        """Create a styled card frame with a title label."""
+        card = ctk.CTkFrame(parent, corner_radius=12)
+        card.grid(row=row, column=0, sticky="ew", pady=(0, 12))
+        card.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            card, text=title,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 8))
+        return card
+
+    def _card_file_type(self, row):
+        card = self._make_card(self.main_frame, "File Type", row)
+
+        seg = ctk.CTkSegmentedButton(
+            card, values=["All Files", "Photos Only", "Videos Only"],
+            command=self._on_filetype_segment,
+            font=ctk.CTkFont(size=13),
+        )
+        seg.set("All Files")
+        seg.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
+        self._filetype_seg = seg
+
+        return row + 1
+
+    def _on_filetype_segment(self, value):
+        mapping = {"All Files": "all", "Photos Only": "photos", "Videos Only": "videos"}
+        self.file_type_selection.set(mapping[value])
+        self.update_file_type_selection()
+
+    def _card_language(self, row):
+        card = self._make_card(self.main_frame, "Folder Name Language", row)
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
+        inner.columnconfigure(1, weight=1)
+
+        self.lang_menu = ctk.CTkOptionMenu(
+            inner, values=["English", "Swedish"],
+            variable=self.language_var,
+            width=160, height=32,
+            font=ctk.CTkFont(size=13),
+        )
+        self.lang_menu.grid(row=0, column=0, sticky="w")
+
+        self.detected_lang_label = ctk.CTkLabel(
+            inner, text="Detected: —",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary_dark"],
+        )
+        self.detected_lang_label.grid(row=0, column=1, sticky="e")
+
+        return row + 1
+
+    def _card_folders(self, row):
+        card = self._make_card(self.main_frame, "Folders", row)
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
+        inner.columnconfigure(0, weight=1)
+
+        r = 0
+
+        # Source
+        r = self._folder_row(inner, r, "Source Folder", self.source_path, self.browse_source)
+
+        # Photo dest
+        self._photo_dest_label = ctk.CTkLabel(inner, text="Destination Folder", font=ctk.CTkFont(size=13))
+        self._photo_dest_label.grid(row=r, column=0, sticky="w", pady=(10, 4))
+        r += 1
+        prow = ctk.CTkFrame(inner, fg_color="transparent")
+        prow.grid(row=r, column=0, sticky="ew")
+        prow.columnconfigure(0, weight=1)
+        self._photo_dest_entry = ctk.CTkEntry(prow, textvariable=self.photo_dest_path, height=36, font=ctk.CTkFont(size=13))
+        self._photo_dest_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._photo_dest_btn = ctk.CTkButton(prow, text="Browse", width=90, height=36, command=self.browse_photo_dest)
+        self._photo_dest_btn.grid(row=0, column=1)
+        r += 1
+
+        # Separate videos toggle
+        self.sep_video_switch = ctk.CTkSwitch(
+            inner, text="Separate video destination",
             variable=self.separate_videos,
-            command=self.toggle_video_destination
+            command=self.toggle_video_destination,
+            font=ctk.CTkFont(size=13),
         )
-        self.separate_videos_check.grid(row=4, column=0, sticky=W, pady=5)
+        self.sep_video_switch.grid(row=r, column=0, sticky="w", pady=(12, 4))
+        r += 1
 
-        # Video destination folder
-        ttk.Label(folder_frame, text="Video Destination Folder:").grid(row=5, column=0, sticky=W, pady=5)
-        self.video_dest_path = StringVar()
-        self.video_dest_entry = ttk.Entry(folder_frame, textvariable=self.video_dest_path, width=50, state='disabled')
-        self.video_dest_entry.grid(row=6, column=0, padx=5)
-        self.video_dest_button = ttk.Button(folder_frame, text="Browse", command=self.browse_video_dest, state='disabled')
-        self.video_dest_button.grid(row=6, column=1)
+        # Video dest
+        self._video_dest_label = ctk.CTkLabel(inner, text="Video Destination Folder", font=ctk.CTkFont(size=13))
+        self._video_dest_label.grid(row=r, column=0, sticky="w", pady=(6, 4))
+        r += 1
+        vrow = ctk.CTkFrame(inner, fg_color="transparent")
+        vrow.grid(row=r, column=0, sticky="ew")
+        vrow.columnconfigure(0, weight=1)
+        self._video_dest_entry = ctk.CTkEntry(vrow, textvariable=self.video_dest_path, height=36, state="disabled", font=ctk.CTkFont(size=13))
+        self._video_dest_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._video_dest_btn = ctk.CTkButton(vrow, text="Browse", width=90, height=36, command=self.browse_video_dest, state="disabled")
+        self._video_dest_btn.grid(row=0, column=1)
 
-        # Options frame
-        options_frame = ttk.LabelFrame(self.main_container, text="Options", padding="10")
-        options_frame.grid(row=4, column=0, columnspan=2, sticky=(W, E), pady=(0, 20))
+        # Initially hide video dest row
+        self._video_dest_label.grid_remove()
+        vrow.grid_remove()
+        self._video_row_frame = vrow
 
-        # Delete files checkbox
-        self.delete_files = BooleanVar()
-        self.delete_files.set(False)
-        ttk.Checkbutton(
-            options_frame,
-            text="Delete files from source after organizing",
-            variable=self.delete_files
-        ).grid(row=0, column=0, sticky=W)
+        return row + 1
 
-        # Progress frame
-        progress_frame = ttk.LabelFrame(self.main_container, text="Progress", padding="10")
-        progress_frame.grid(row=5, column=0, columnspan=2, sticky=(W, E))
+    def _folder_row(self, parent, r, label, var, cmd):
+        ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=13)).grid(row=r, column=0, sticky="w", pady=(0, 4))
+        r += 1
+        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame.grid(row=r, column=0, sticky="ew")
+        row_frame.columnconfigure(0, weight=1)
+        ctk.CTkEntry(row_frame, textvariable=var, height=36, font=ctk.CTkFont(size=13)).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(row_frame, text="Browse", width=90, height=36, command=cmd).grid(row=0, column=1)
+        return r + 1
 
-        # File counter
-        self.counter_var = StringVar(value="Files Processed: 0 / 0")
-        ttk.Label(progress_frame, textvariable=self.counter_var).grid(row=0, column=0, sticky=W, pady=5)
+    def _card_options(self, row):
+        card = self._make_card(self.main_frame, "Options", row)
+
+        self.delete_switch = ctk.CTkSwitch(
+            card, text="Delete source files after organizing",
+            variable=self.delete_files,
+            font=ctk.CTkFont(size=13),
+        )
+        self.delete_switch.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 14))
+
+        return row + 1
+
+    def _card_progress(self, row):
+        card = self._make_card(self.main_frame, "Progress", row)
+        card.columnconfigure(0, weight=1)
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
+        inner.columnconfigure(0, weight=1)
+
+        # Counter
+        self.counter_label = ctk.CTkLabel(
+            inner, textvariable=self.counter_var,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary_dark"],
+        )
+        self.counter_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
 
         # Progress bar
-        self.progress = ttk.Progressbar(progress_frame, mode='determinate', length=600)
-        self.progress.grid(row=1, column=0, columnspan=2, pady=5)
+        self.progress_bar = ctk.CTkProgressBar(inner, height=10, corner_radius=5)
+        self.progress_bar.set(0)
+        self.progress_bar.grid(row=1, column=0, sticky="ew", pady=(0, 8))
 
-        # Status message
-        self.status_var = StringVar(value="Ready")
-        ttk.Label(progress_frame, textvariable=self.status_var, wraplength=600).grid(row=2, column=0, columnspan=2, pady=5)
+        # Status
+        self.status_label = ctk.CTkLabel(
+            inner, textvariable=self.status_var,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary_dark"],
+            wraplength=620, justify="left",
+        )
+        self.status_label.grid(row=2, column=0, sticky="w")
 
-        # Buttons frame
-        buttons_frame = ttk.Frame(self.main_container)
-        buttons_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        return row + 1
 
-        # Start button
-        self.start_button = ttk.Button(buttons_frame, text="Start Organization", command=self.start_organization)
-        self.start_button.grid(row=0, column=0, padx=5)
+    def _action_buttons(self, row):
+        btn_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        btn_frame.grid(row=row, column=0, sticky="ew", pady=(4, 0))
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
 
-        # Cancel button
-        self.cancel_button = ttk.Button(buttons_frame, text="Cancel", command=self.cancel_organization, state='disabled')
-        self.cancel_button.grid(row=0, column=1, padx=5)
+        self.start_button = ctk.CTkButton(
+            btn_frame, text="Start Organizing", height=44,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            command=self.start_organization,
+        )
+        self.start_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        self.cancel_button = ctk.CTkButton(
+            btn_frame, text="Cancel", height=44,
+            font=ctk.CTkFont(size=15),
+            fg_color="transparent", border_width=1,
+            border_color=COLORS["border_dark"],
+            hover_color=COLORS["error"],
+            state="disabled",
+            command=self.cancel_organization,
+        )
+        self.cancel_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+    # -- Theme toggle ----------------------------------------------------------
+
+    def _toggle_theme(self):
+        current = ctk.get_appearance_mode()
+        if current == "Dark":
+            ctk.set_appearance_mode("light")
+            self.theme_btn.configure(text="Dark")
+        else:
+            ctk.set_appearance_mode("dark")
+            self.theme_btn.configure(text="Light")
+
+    # -- About dialog ----------------------------------------------------------
+
+    def show_about_dialog(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("About")
+        dialog.geometry("380x300")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center on parent
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 380) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 300) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(
+            dialog, text=self.app_info['name'],
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(pady=(30, 4))
+
+        ctk.CTkLabel(
+            dialog, text=f"Version {self.app_info['version']}",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary_dark"],
+        ).pack(pady=(0, 20))
+
+        ctk.CTkLabel(
+            dialog,
+            text=f"\u00A9 {self.app_info['year']} {self.app_info['company']}",
+            font=ctk.CTkFont(size=13),
+        ).pack(pady=(0, 2))
+
+        ctk.CTkLabel(
+            dialog, text="All rights reserved",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary_dark"],
+        ).pack(pady=(0, 16))
+
+        ctk.CTkLabel(
+            dialog, text=self.app_info['email'],
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["accent"],
+        ).pack(pady=(0, 20))
+
+        ctk.CTkButton(
+            dialog, text="Close", width=120, height=36,
+            command=dialog.destroy,
+        ).pack()
+
+    # -- System language detection ---------------------------------------------
 
     def detect_system_language(self):
-        """Detect system language"""
         try:
             system_locale = locale.getlocale()[0]
             if system_locale and system_locale.startswith('sv'):
@@ -264,139 +458,76 @@ class PhotoOrganizerApp:
         except Exception:
             self.detected_language = 'English'
 
-        # Set the dropdown to the detected language
         self.language_var.set(self.detected_language)
-        self.language_label.config(text=f"Detected language: {self.detected_language}")
+        self.detected_lang_label.configure(text=f"Detected: {self.detected_language}")
 
-    def show_about_dialog(self):
-        """Show the about dialog with app information"""
-        about_dialog = Toplevel(self.root)
-        about_dialog.title("About Photo & Video Organizer")
-        about_dialog.geometry("400x300")
-        about_dialog.resizable(False, False)
-
-        # Make the dialog modal
-        about_dialog.transient(self.root)
-        about_dialog.grab_set()
-
-        # Center the dialog on the main window
-        x = self.root.winfo_x() + (self.root.winfo_width() - 400) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 300) // 2
-        about_dialog.geometry(f"+{x}+{y}")
-
-        # Container frame with padding
-        container = ttk.Frame(about_dialog, padding="20")
-        container.pack(fill=BOTH, expand=True)
-
-        # App name
-        ttk.Label(
-            container,
-            text=self.app_info['name'],
-            font=('Helvetica', 16, 'bold')
-        ).pack(pady=(0, 5))
-
-        # Version
-        ttk.Label(
-            container,
-            text=f"Version {self.app_info['version']}",
-            font=('Helvetica', 12, 'italic')
-        ).pack(pady=(0, 20))
-
-        # Copyright notice
-        ttk.Label(
-            container,
-            text=f"© {self.app_info['year']} {self.app_info['company']}",
-            font=('Helvetica', 12)
-        ).pack(pady=(0, 5))
-
-        ttk.Label(
-            container,
-            text="All rights reserved",
-            font=('Helvetica', 12)
-        ).pack(pady=(0, 20))
-
-        # Contact information
-        ttk.Label(
-            container,
-            text="Contact:",
-            font=('Helvetica', 12)
-        ).pack(pady=(0, 5))
-
-        ttk.Label(
-            container,
-            text=self.app_info['email'],
-            font=('Helvetica', 12)
-        ).pack(pady=(0, 20))
-
-        # Close button
-        ttk.Button(
-            container,
-            text="Close",
-            command=about_dialog.destroy,
-            width=15
-        ).pack(pady=(10, 0))
+    # -- File type selection ---------------------------------------------------
 
     def update_file_type_selection(self):
-        """Update UI based on file type selection"""
         selection = self.file_type_selection.get()
 
-        # Toggle photo destination widgets directly via stored references
-        photo_state = 'disabled' if selection == 'videos' else 'normal'
-        self.photo_dest_label.configure(state=photo_state)
-        self.photo_dest_entry.configure(state=photo_state)
-        self.photo_dest_button.configure(state=photo_state)
+        # Photo destination visibility
+        photo_state = "disabled" if selection == "videos" else "normal"
+        self._photo_dest_label.configure(state=photo_state)
+        self._photo_dest_entry.configure(state=photo_state)
+        self._photo_dest_btn.configure(state=photo_state)
 
-        # Update video destination fields
+        # Video destination handling
         if selection == 'videos':
             self.separate_videos.set(True)
-            self.separate_videos_check.configure(state='disabled')
-            self.video_dest_entry.configure(state='normal')
-            self.video_dest_button.configure(state='normal')
+            self.sep_video_switch.configure(state="disabled")
+            self._show_video_dest(True)
         elif selection == 'photos':
             self.separate_videos.set(False)
-            self.separate_videos_check.configure(state='disabled')
-            self.video_dest_entry.configure(state='disabled')
-            self.video_dest_button.configure(state='disabled')
+            self.sep_video_switch.configure(state="disabled")
+            self._show_video_dest(False)
             self.video_dest_path.set('')
-        else:  # all
-            self.separate_videos_check.configure(state='normal')
+        else:
+            self.sep_video_switch.configure(state="normal")
             self.toggle_video_destination()
 
-        # Update file count
         if self.source_path.get():
             self.update_file_count()
 
-    def toggle_video_destination(self):
-        """Enable/disable video destination selection based on checkbox"""
-        state = 'normal' if self.separate_videos.get() else 'disabled'
-        self.video_dest_entry.config(state=state)
-        self.video_dest_button.config(state=state)
+    def _show_video_dest(self, show):
+        if show:
+            self._video_dest_label.grid()
+            self._video_row_frame.grid()
+            self._video_dest_entry.configure(state="normal")
+            self._video_dest_btn.configure(state="normal")
+        else:
+            self._video_dest_label.grid_remove()
+            self._video_row_frame.grid_remove()
+            self._video_dest_entry.configure(state="disabled")
+            self._video_dest_btn.configure(state="disabled")
 
-        # Clear video destination path if disabled
-        if state == 'disabled':
+    def toggle_video_destination(self):
+        show = self.separate_videos.get()
+        self._show_video_dest(show)
+        if not show:
             self.video_dest_path.set('')
 
+    # -- Folder browsing -------------------------------------------------------
+
     def browse_source(self):
-        """Open dialog to select source folder"""
         folder = filedialog.askdirectory()
         if folder:
             self.source_path.set(folder)
             self.update_file_count()
 
     def browse_photo_dest(self):
-        """Open dialog to select photo destination folder"""
         folder = filedialog.askdirectory()
         if folder:
             self.photo_dest_path.set(folder)
 
     def browse_video_dest(self):
-        """Open dialog to select video destination folder"""
         folder = filedialog.askdirectory()
         if folder:
             self.video_dest_path.set(folder)
 
+    # -- File count ------------------------------------------------------------
+
     def update_file_count(self):
-        """Update the total file count when source folder is selected"""
         source = self.source_path.get()
         if source:
             selection = self.file_type_selection.get()
@@ -404,56 +535,52 @@ class PhotoOrganizerApp:
                 extensions = self.photo_extensions + self.video_extensions
             elif selection == 'photos':
                 extensions = self.photo_extensions
-            else:  # videos
+            else:
                 extensions = self.video_extensions
 
-            self.total_files = sum(1 for root, _, files in os.walk(source)
-                                 for f in files if f.lower().endswith(extensions))
+            self.total_files = sum(
+                1 for root, _, files in os.walk(source)
+                for f in files if f.lower().endswith(extensions)
+            )
             self.processed_files = 0
-            self.counter_var.set(f"Files Processed: {self.processed_files} / {self.total_files}")
+            self.counter_var.set(f"0 / {self.total_files} files")
+
+    # -- Media date extraction -------------------------------------------------
 
     def get_media_date(self, file_path):
-        """Get the creation date of a media file"""
         try:
-            # Try to get EXIF data for photos
             if file_path.lower().endswith(self.photo_extensions):
                 self._load_pil()
                 with self._PIL.open(file_path) as img:
                     exif = img.getexif()
                     if exif:
-                        # Check root IFD for DateTime (tag 306)
                         if 306 in exif:
                             date_str = exif[306]
                             return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                        # Check Exif sub-IFD for DateTimeOriginal (tag 36867)
                         exif_ifd = exif.get_ifd(0x8769)
                         if exif_ifd and 36867 in exif_ifd:
                             date_str = exif_ifd[36867]
                             return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
 
-            # Fall back to file modification time
             timestamp = os.path.getmtime(file_path)
             return datetime.fromtimestamp(timestamp)
-
         except Exception as e:
-            print(f"Error getting date for {file_path}: {str(e)}")
-            # Return current date if all methods fail
+            print(f"Error getting date for {file_path}: {e}")
             return datetime.now()
 
     def get_localized_month(self, date):
-        """Get month name in current language"""
         english_month = date.strftime('%B')
         selected_language = self.language_var.get()
         return self.month_translations[selected_language][english_month]
 
+    # -- Organization ----------------------------------------------------------
+
     def cancel_organization(self):
-        """Cancel the organization process"""
         self.cancel_flag = True
-        self.status_var.set("Cancelling... Please wait.")
-        self.cancel_button['state'] = 'disabled'
+        self.status_var.set("Cancelling...")
+        self.cancel_button.configure(state="disabled")
 
     def _validate_paths(self):
-        """Validate source and destination paths before organizing."""
         source = os.path.realpath(self.source_path.get())
 
         if not os.path.isdir(source):
@@ -467,83 +594,76 @@ class PhotoOrganizerApp:
             if not dest:
                 continue
             if source == dest:
-                self.status_var.set("Error: Source and destination folders cannot be the same.")
+                self.status_var.set("Error: Source and destination cannot be the same.")
                 return False
             if dest.startswith(source + os.sep):
-                self.status_var.set("Error: Destination folder cannot be inside the source folder.")
+                self.status_var.set("Error: Destination cannot be inside the source folder.")
                 return False
             if source.startswith(dest + os.sep):
-                self.status_var.set("Error: Source folder is inside the destination. Files could be reorganized into themselves.")
+                self.status_var.set("Error: Source is inside the destination.")
                 return False
         return True
 
     def start_organization(self):
-        """Start the organization process in a separate thread"""
         selection = self.file_type_selection.get()
 
         if not self.source_path.get():
-            self.status_var.set("Please select source folder")
+            self.status_var.set("Please select a source folder.")
             return
-
-        if selection in ['all', 'photos'] and not self.photo_dest_path.get():
-            self.status_var.set("Please select photo destination folder")
+        if selection in ('all', 'photos') and not self.photo_dest_path.get():
+            self.status_var.set("Please select a destination folder.")
             return
-
-        if (selection == 'videos' or
-            (selection == 'all' and self.separate_videos.get())) and not self.video_dest_path.get():
-            self.status_var.set("Please select video destination folder")
+        if (selection == 'videos' or (selection == 'all' and self.separate_videos.get())) and not self.video_dest_path.get():
+            self.status_var.set("Please select a video destination folder.")
             return
-
         if not self._validate_paths():
             return
 
-        self.start_button['state'] = 'disabled'
-        self.cancel_button['state'] = 'normal'
-        self.status_var.set("Starting organization...")
-        self.progress['value'] = 0
+        self.start_button.configure(state="disabled")
+        self.cancel_button.configure(state="normal")
+        self.status_var.set("Starting...")
+        self.progress_bar.set(0)
         self.processed_files = 0
 
-        # Run in separate thread to keep GUI responsive
-        thread = threading.Thread(target=self.organize_files)
-        thread.daemon = True
+        thread = threading.Thread(target=self.organize_files, daemon=True)
         thread.start()
 
     def _update_progress(self, processed, total, filename, done=False, cancelled=False, errors=0):
-        """Schedule a UI update on the main thread (thread-safe)."""
-        def _do_update():
-            self.progress['value'] = processed
-            self.counter_var.set(f"Files Processed: {processed} / {total}")
+        def _do():
+            frac = processed / total if total else 0
+            self.progress_bar.set(frac)
+            self.counter_var.set(f"{processed} / {total} files")
             if cancelled:
-                self.status_var.set("Organization cancelled.")
-                self.start_button['state'] = 'normal'
-                self.cancel_button['state'] = 'disabled'
+                self.status_var.set("Cancelled.")
+                self.progress_bar.configure(progress_color=COLORS["warning"])
+                self.start_button.configure(state="normal")
+                self.cancel_button.configure(state="disabled")
             elif done:
-                action_text = "moved" if self.delete_files.get() else "copied"
-                error_text = f" ({errors} failed)" if errors else ""
-                self.status_var.set(f"Organization completed! {processed - errors} files have been {action_text}.{error_text}")
-                self.start_button['state'] = 'normal'
-                self.cancel_button['state'] = 'disabled'
+                action = "moved" if self.delete_files.get() else "copied"
+                err = f" ({errors} failed)" if errors else ""
+                self.status_var.set(f"Done! {processed - errors} files {action}.{err}")
+                self.progress_bar.configure(progress_color=COLORS["success"])
+                self.start_button.configure(state="normal")
+                self.cancel_button.configure(state="disabled")
             else:
                 self.status_var.set(f"Processing: {filename}")
-        self.root.after(0, _do_update)
+                self.progress_bar.configure(progress_color=COLORS["accent"])
+        self.root.after(0, _do)
 
     def organize_files(self):
-        """Main function to organize files"""
         source = self.source_path.get()
         photo_dest = self.photo_dest_path.get()
         video_dest = self.video_dest_path.get() if self.separate_videos.get() else photo_dest
         should_delete = self.delete_files.get()
 
-        # Reset cancel flag
         self.cancel_flag = False
 
-        # Get list of media files based on selection
         selection = self.file_type_selection.get()
         if selection == 'all':
             extensions = self.photo_extensions + self.video_extensions
         elif selection == 'photos':
             extensions = self.photo_extensions
-        else:  # videos
+        else:
             extensions = self.video_extensions
 
         files = []
@@ -555,36 +675,28 @@ class PhotoOrganizerApp:
         self.total_files = len(files)
 
         if self.total_files == 0:
-            self.root.after(0, lambda: self.status_var.set("No matching files found in source folder."))
-            self.root.after(0, lambda: self.start_button.configure(state='normal'))
-            self.root.after(0, lambda: self.cancel_button.configure(state='disabled'))
+            self.root.after(0, lambda: self.status_var.set("No matching files found."))
+            self.root.after(0, lambda: self.start_button.configure(state="normal"))
+            self.root.after(0, lambda: self.cancel_button.configure(state="disabled"))
             return
 
-        self.root.after(0, lambda: self.progress.configure(maximum=self.total_files))
         self.processed_files = 0
         error_count = 0
 
         for file_path in files:
-            # Check if cancellation was requested
             if self.cancel_flag:
                 self._update_progress(self.processed_files, self.total_files, '', cancelled=True)
                 return
 
             try:
-                # Determine if file is video or photo
                 is_video = file_path.lower().endswith(self.video_extensions)
                 dest_base = video_dest if is_video else photo_dest
 
-                # Get date from file
                 date = self.get_media_date(file_path)
-
-                # Create year/month folders with localized month name
                 month = self.get_localized_month(date)
-                year_month = f"{date.year}/{month}"
-                dest_dir = os.path.join(dest_base, year_month)
+                dest_dir = os.path.join(dest_base, str(date.year), month)
                 os.makedirs(dest_dir, exist_ok=True)
 
-                # Handle duplicate filenames
                 filename = os.path.basename(file_path)
                 base, ext = os.path.splitext(filename)
                 counter = 1
@@ -593,30 +705,31 @@ class PhotoOrganizerApp:
                     dest_path = os.path.join(dest_dir, f"{base}_{counter}{ext}")
                     counter += 1
 
-                # Move or copy file based on checkbox selection
                 if should_delete:
                     shutil.move(file_path, dest_path)
                 else:
                     shutil.copy2(file_path, dest_path)
 
             except Exception as e:
-                print(f"Error {'moving' if should_delete else 'copying'} {file_path}: {str(e)}")
+                print(f"Error {'moving' if should_delete else 'copying'} {file_path}: {e}")
                 error_count += 1
 
-            # Update progress (thread-safe) — always increment, even on error
             self.processed_files += 1
             self._update_progress(self.processed_files, self.total_files, os.path.basename(file_path))
 
         if not self.cancel_flag:
             self._update_progress(self.processed_files, self.total_files, '', done=True, errors=error_count)
 
+    # -- Run -------------------------------------------------------------------
+
+    def run(self):
+        self.root.mainloop()
+
 
 if __name__ == "__main__":
-    # Enable DPI awareness on Windows for crisp text and UI
     if sys.platform == "win32":
         try:
             import ctypes
-            # System DPI aware (1) - Windows scales the window automatically
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except Exception:
             try:
@@ -624,25 +737,5 @@ if __name__ == "__main__":
             except Exception:
                 pass
 
-    root = Tk()
-
-    # Set application icon
-    try:
-        if sys.platform == "darwin":
-            # On macOS, the .icns file is part of the app bundle
-            pass
-        elif sys.platform == "win32":
-            # On Windows, use .ico file (works with both bundled and dev mode)
-            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photo_organizer.ico")
-            if os.path.exists(icon_path):
-                root.iconbitmap(icon_path)
-        else:
-            # Linux fallback using .png
-            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photo_organizer.png")
-            if os.path.exists(icon_path):
-                root.wm_iconphoto(True, PhotoImage(file=icon_path))
-    except Exception:
-        pass  # If icon loading fails, continue without an icon
-
-    app = PhotoOrganizerApp(root)
-    root.mainloop()
+    app = PhotoOrganizerApp()
+    app.run()
