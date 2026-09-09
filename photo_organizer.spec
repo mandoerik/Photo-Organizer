@@ -16,6 +16,8 @@ a = Analysis(
         'tkinter',
         'tkinter.ttk',
         'customtkinter',
+        'organizer_core',
+        'pillow_heif',
     ],
     hookspath=[],
     hooksconfig={},

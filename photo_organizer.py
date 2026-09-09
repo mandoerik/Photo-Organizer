@@ -8,9 +8,9 @@ Features:
 - Organizes photos and videos by date taken
 - Optional separate processing for photos and videos
 - Creates year/month folder structure automatically
-- Supports multiple media formats (JPG, PNG, GIF, MP4, MOV, AVI)
+- Supports multiple media formats (JPG, PNG, GIF, HEIC, WEBP, TIFF, MP4, MOV, AVI, ...)
 - Maintains original file metadata
-- Handles duplicate filenames
+- Skips files that already exist in the destination (content compared, not just name)
 - Supports English and Swedish folder naming
 - Option to remove source files after organization
 - Modern CustomTkinter UI with dark/light mode
@@ -18,13 +18,15 @@ Features:
 
 import locale
 import os
-import shutil
+import subprocess
 import sys
 import threading
-from datetime import datetime
+import time
 
 import customtkinter as ctk
 from tkinter import filedialog, StringVar, BooleanVar
+
+import organizer_core as core
 
 
 # --- Color Palette ---
@@ -56,9 +58,6 @@ class PhotoOrganizerApp:
         self.root.geometry("720x860")
         self.root.minsize(680, 820)
 
-        # Lazy load PIL (heavy dependency)
-        self._PIL = None
-
         # App information
         self.app_info = {
             'name': 'Photo & Video Organizer',
@@ -68,12 +67,16 @@ class PhotoOrganizerApp:
             'email': 'info@express-it.se'
         }
 
-        # Cancellation flag
+        # Cancellation flag (read by the worker thread between files)
         self.cancel_flag = False
 
-        # Supported file types
-        self.photo_extensions = ('.jpg', '.jpeg', '.png', '.gif')
-        self.video_extensions = ('.mp4', '.mov', '.avi')
+        # Result of the last run, for the error dialog
+        self.last_result = None
+        self.log_path = core.configure_logging()
+
+        # Background file counting: only the latest scan may update the UI
+        self._count_generation = 0
+        self._last_progress_post = 0.0
 
         # Variables
         self.file_type_selection = StringVar(value='all')
@@ -86,34 +89,8 @@ class PhotoOrganizerApp:
         self.status_var = StringVar(value="Ready")
         self.counter_var = StringVar(value="0 / 0 files")
 
-        # Month translations
-        self.month_translations = {
-            'English': {
-                'January': 'January', 'February': 'February', 'March': 'March',
-                'April': 'April', 'May': 'May', 'June': 'June',
-                'July': 'July', 'August': 'August', 'September': 'September',
-                'October': 'October', 'November': 'November', 'December': 'December'
-            },
-            'Swedish': {
-                'January': 'Januari', 'February': 'Februari', 'March': 'Mars',
-                'April': 'April', 'May': 'Maj', 'June': 'Juni',
-                'July': 'Juli', 'August': 'Augusti', 'September': 'September',
-                'October': 'Oktober', 'November': 'November', 'December': 'December'
-            }
-        }
-
-        # Counters
-        self.processed_files = 0
-        self.total_files = 0
-
         self._build_ui()
         self.detect_system_language()
-
-    def _load_pil(self):
-        """Lazy load PIL only when needed"""
-        if self._PIL is None:
-            from PIL import Image
-            self._PIL = Image
 
     # ------------------------------------------------------------------ UI --
     def _build_ui(self):
@@ -357,6 +334,17 @@ class PhotoOrganizerApp:
         )
         self.status_label.grid(row=2, column=0, sticky="w")
 
+        # Shown only after a run that had failures
+        self.errors_button = ctk.CTkButton(
+            inner, text="Show errors", width=110, height=28,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent", border_width=1,
+            border_color=COLORS["error"], hover_color=COLORS["subtle_dark"],
+            command=self.show_errors_dialog,
+        )
+        self.errors_button.grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.errors_button.grid_remove()
+
         return row + 1
 
     def _action_buttons(self, row):
@@ -446,6 +434,63 @@ class PhotoOrganizerApp:
             command=dialog.destroy,
         ).pack()
 
+    # -- Error dialog ----------------------------------------------------------
+
+    def show_errors_dialog(self):
+        result = self.last_result
+        if not result or not result.errors:
+            return
+
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Files that could not be organized")
+        dialog.geometry("640x420")
+        dialog.transient(self.root)
+
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 640) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 420) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(
+            dialog, text=f"{len(result.errors)} file(s) failed",
+            font=ctk.CTkFont(size=15, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(16, 6))
+
+        box = ctk.CTkTextbox(dialog, font=ctk.CTkFont(size=12), wrap="none")
+        box.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        for path, message in result.errors:
+            box.insert("end", f"{path}\n    {message}\n")
+        box.configure(state="disabled")
+
+        footer = ctk.CTkFrame(dialog, fg_color="transparent")
+        footer.pack(fill="x", padx=16, pady=(0, 16))
+        if self.log_path:
+            ctk.CTkLabel(
+                footer, text=f"Full log: {self.log_path}",
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_secondary_dark"],
+            ).pack(side="left")
+            ctk.CTkButton(
+                footer, text="Open log", width=90, height=30,
+                command=self._open_log,
+            ).pack(side="right", padx=(8, 0))
+        ctk.CTkButton(
+            footer, text="Close", width=90, height=30, command=dialog.destroy,
+        ).pack(side="right")
+
+    def _open_log(self):
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", self.log_path])
+            elif sys.platform == "win32":
+                os.startfile(self.log_path)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", self.log_path])
+        except Exception:
+            pass
+
     # -- System language detection ---------------------------------------------
 
     def detect_system_language(self):
@@ -528,50 +573,29 @@ class PhotoOrganizerApp:
     # -- File count ------------------------------------------------------------
 
     def update_file_count(self):
+        """Count matching files in a background thread so a large source
+        folder (NAS, external drive) does not freeze the window."""
         source = self.source_path.get()
-        if source:
-            selection = self.file_type_selection.get()
-            if selection == 'all':
-                extensions = self.photo_extensions + self.video_extensions
-            elif selection == 'photos':
-                extensions = self.photo_extensions
-            else:
-                extensions = self.video_extensions
+        if not source:
+            return
+        extensions = core.extensions_for(self.file_type_selection.get())
 
-            self.total_files = sum(
-                1 for root, _, files in os.walk(source)
-                for f in files if f.lower().endswith(extensions)
-            )
-            self.processed_files = 0
-            self.counter_var.set(f"0 / {self.total_files} files")
+        self._count_generation += 1
+        generation = self._count_generation
+        self.counter_var.set("Counting files...")
 
-    # -- Media date extraction -------------------------------------------------
+        def _count():
+            try:
+                total = len(core.collect_files(source, extensions))
+            except Exception:
+                total = 0
 
-    def get_media_date(self, file_path):
-        try:
-            if file_path.lower().endswith(self.photo_extensions):
-                self._load_pil()
-                with self._PIL.open(file_path) as img:
-                    exif = img.getexif()
-                    if exif:
-                        if 306 in exif:
-                            date_str = exif[306]
-                            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                        exif_ifd = exif.get_ifd(0x8769)
-                        if exif_ifd and 36867 in exif_ifd:
-                            date_str = exif_ifd[36867]
-                            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+            def _apply():
+                if generation == self._count_generation:
+                    self.counter_var.set(f"0 / {total} files")
+            self.root.after(0, _apply)
 
-            timestamp = os.path.getmtime(file_path)
-            return datetime.fromtimestamp(timestamp)
-        except Exception as e:
-            print(f"Error getting date for {file_path}: {e}")
-            return datetime.now()
-
-    def get_localized_month(self, date):
-        english_month = date.strftime('%B')
-        selected_language = self.language_var.get()
-        return self.month_translations[selected_language][english_month]
+        threading.Thread(target=_count, daemon=True).start()
 
     # -- Organization ----------------------------------------------------------
 
@@ -580,29 +604,23 @@ class PhotoOrganizerApp:
         self.status_var.set("Cancelling...")
         self.cancel_button.configure(state="disabled")
 
-    def _validate_paths(self):
-        source = os.path.realpath(self.source_path.get())
+    def _build_job(self):
+        """Snapshot every setting on the main thread into a core.Job.
 
-        if not os.path.isdir(source):
-            self.status_var.set("Error: Source folder does not exist.")
-            return False
-
-        photo_dest = os.path.realpath(self.photo_dest_path.get()) if self.photo_dest_path.get() else ''
-        video_dest = os.path.realpath(self.video_dest_path.get()) if self.video_dest_path.get() else ''
-
-        for dest in (photo_dest, video_dest):
-            if not dest:
-                continue
-            if source == dest:
-                self.status_var.set("Error: Source and destination cannot be the same.")
-                return False
-            if dest.startswith(source + os.sep):
-                self.status_var.set("Error: Destination cannot be inside the source folder.")
-                return False
-            if source.startswith(dest + os.sep):
-                self.status_var.set("Error: Source is inside the destination.")
-                return False
-        return True
+        Tk variables must not be read from the worker thread, so all the
+        worker ever sees is this plain object.
+        """
+        selection = self.file_type_selection.get()
+        photo_dest = self.photo_dest_path.get()
+        video_dest = self.video_dest_path.get() if self.separate_videos.get() else photo_dest
+        return core.Job(
+            source=self.source_path.get(),
+            photo_dest=photo_dest,
+            video_dest=video_dest,
+            extensions=core.extensions_for(selection),
+            language=self.language_var.get(),
+            delete_source=self.delete_files.get(),
+        )
 
     def start_organization(self):
         selection = self.file_type_selection.get()
@@ -616,109 +634,83 @@ class PhotoOrganizerApp:
         if (selection == 'videos' or (selection == 'all' and self.separate_videos.get())) and not self.video_dest_path.get():
             self.status_var.set("Please select a video destination folder.")
             return
-        if not self._validate_paths():
+
+        job = self._build_job()
+        error = core.validate_paths(job.source, [job.photo_dest, job.video_dest])
+        if error:
+            self.status_var.set(f"Error: {error}")
             return
 
+        self.cancel_flag = False
+        self.last_result = None
+        self.errors_button.grid_remove()
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.status_var.set("Starting...")
         self.progress_bar.set(0)
-        self.processed_files = 0
+        self.progress_bar.configure(progress_color=COLORS["accent"])
 
-        thread = threading.Thread(target=self.organize_files, daemon=True)
+        thread = threading.Thread(target=self._run_job, args=(job,), daemon=True)
         thread.start()
 
-    def _update_progress(self, processed, total, filename, done=False, cancelled=False, errors=0):
+    # Worker-thread callbacks. Everything that touches a widget is handed to
+    # the main thread via root.after().
+
+    def _on_progress(self, processed, total, filename):
+        now = time.monotonic()
+        if processed < total and now - self._last_progress_post < 0.05:
+            return  # at most ~20 UI updates per second
+        self._last_progress_post = now
+
         def _do():
-            frac = processed / total if total else 0
-            self.progress_bar.set(frac)
+            self.progress_bar.set(processed / total if total else 0)
             self.counter_var.set(f"{processed} / {total} files")
-            if cancelled:
-                self.status_var.set("Cancelled.")
-                self.progress_bar.configure(progress_color=COLORS["warning"])
-                self.start_button.configure(state="normal")
-                self.cancel_button.configure(state="disabled")
-            elif done:
-                action = "moved" if self.delete_files.get() else "copied"
-                err = f" ({errors} failed)" if errors else ""
-                self.status_var.set(f"Done! {processed - errors} files {action}.{err}")
-                self.progress_bar.configure(progress_color=COLORS["success"])
-                self.start_button.configure(state="normal")
-                self.cancel_button.configure(state="disabled")
-            else:
-                self.status_var.set(f"Processing: {filename}")
-                self.progress_bar.configure(progress_color=COLORS["accent"])
+            self.status_var.set(f"Processing: {filename}")
         self.root.after(0, _do)
 
-    def organize_files(self):
-        source = self.source_path.get()
-        photo_dest = self.photo_dest_path.get()
-        video_dest = self.video_dest_path.get() if self.separate_videos.get() else photo_dest
-        should_delete = self.delete_files.get()
+    def _run_job(self, job):
+        try:
+            result = core.organize(
+                job,
+                progress=self._on_progress,
+                should_cancel=lambda: self.cancel_flag,
+            )
+        except Exception as e:  # defensive: never let the thread die silently
+            core.log.exception("Unexpected failure")
+            result = core.Result(errors=[("(run aborted)", f"{type(e).__name__}: {e}")])
+        self.root.after(0, lambda: self._finish(job, result))
 
-        self.cancel_flag = False
+    def _finish(self, job, result):
+        self.last_result = result
+        self.progress_bar.set(result.processed / result.total if result.total else 0)
+        self.counter_var.set(f"{result.processed} / {result.total} files")
+        self.start_button.configure(state="normal")
+        self.cancel_button.configure(state="disabled")
 
-        selection = self.file_type_selection.get()
-        if selection == 'all':
-            extensions = self.photo_extensions + self.video_extensions
-        elif selection == 'photos':
-            extensions = self.photo_extensions
-        else:
-            extensions = self.video_extensions
-
-        files = []
-        for dirpath, _, filenames in os.walk(source):
-            for filename in filenames:
-                if filename.lower().endswith(extensions):
-                    files.append(os.path.join(dirpath, filename))
-
-        self.total_files = len(files)
-
-        if self.total_files == 0:
-            self.root.after(0, lambda: self.status_var.set("No matching files found."))
-            self.root.after(0, lambda: self.start_button.configure(state="normal"))
-            self.root.after(0, lambda: self.cancel_button.configure(state="disabled"))
+        if result.total == 0 and not result.errors:
+            self.status_var.set("No matching files found.")
             return
 
-        self.processed_files = 0
-        error_count = 0
+        if result.cancelled:
+            self.status_var.set("Cancelled.")
+            self.progress_bar.configure(progress_color=COLORS["warning"])
+            return
 
-        for file_path in files:
-            if self.cancel_flag:
-                self._update_progress(self.processed_files, self.total_files, '', cancelled=True)
-                return
-
-            try:
-                is_video = file_path.lower().endswith(self.video_extensions)
-                dest_base = video_dest if is_video else photo_dest
-
-                date = self.get_media_date(file_path)
-                month = self.get_localized_month(date)
-                dest_dir = os.path.join(dest_base, str(date.year), month)
-                os.makedirs(dest_dir, exist_ok=True)
-
-                filename = os.path.basename(file_path)
-                base, ext = os.path.splitext(filename)
-                counter = 1
-                dest_path = os.path.join(dest_dir, filename)
-                while os.path.exists(dest_path):
-                    dest_path = os.path.join(dest_dir, f"{base}_{counter}{ext}")
-                    counter += 1
-
-                if should_delete:
-                    shutil.move(file_path, dest_path)
-                else:
-                    shutil.copy2(file_path, dest_path)
-
-            except Exception as e:
-                print(f"Error {'moving' if should_delete else 'copying'} {file_path}: {e}")
-                error_count += 1
-
-            self.processed_files += 1
-            self._update_progress(self.processed_files, self.total_files, os.path.basename(file_path))
-
-        if not self.cancel_flag:
-            self._update_progress(self.processed_files, self.total_files, '', done=True, errors=error_count)
+        action = "moved" if job.delete_source else "copied"
+        parts = [f"{result.transferred} files {action}"]
+        if result.skipped:
+            parts.append(f"{result.skipped} already in destination")
+        if result.errors:
+            parts.append(f"{len(result.errors)} failed")
+        message = "Done! " + ", ".join(parts) + "."
+        if result.errors:
+            self.errors_button.grid()
+            self.progress_bar.configure(progress_color=COLORS["warning"])
+            if self.log_path:
+                message += f" Log: {self.log_path}"
+        else:
+            self.progress_bar.configure(progress_color=COLORS["success"])
+        self.status_var.set(message)
 
     # -- Run -------------------------------------------------------------------
 

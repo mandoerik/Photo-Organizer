@@ -12,16 +12,20 @@ Photo Organizer is a lightweight Python tool that automatically organizes your p
 
 ## Features
 - 📁 Automatic year/month folder structure
-- 📷 Support for JPG, PNG, GIF, MP4, MOV, AVI
+- 📷 Photos: JPG, PNG, GIF, HEIC/HEIF (iPhone), WEBP, TIFF, BMP
+- 🎬 Videos: MP4, MOV, M4V, 3GP, AVI, MKV, WEBM
+- 📅 Date taken from EXIF (photos) or the container's creation time (MP4/MOV), falling back to file modification time
 - 🔍 Preserves original metadata
-- 🔄 Handles duplicate filenames
+- 🔄 Skips files already present in the destination (content compared, not just name) and renames on real name clashes
+- 🙈 Ignores hidden files such as macOS `._` sidecars
+- 📝 Writes a log and lists any failed files in the app
 - 🌐 Supports English and Swedish folder naming
 - 🗑️ Optional cleanup of source files
 
 ## Organization Options
 - **File Type Selection:**
-  - Photos Only: Organize just your photos (JPG, PNG, GIF)
-  - Videos Only: Organize just your videos (MP4, MOV, AVI)
+  - Photos Only: Organize just your photos
+  - Videos Only: Organize just your videos
   - All Files: Organize both photos and videos together
 
 - **Destination Options:**
@@ -79,6 +83,15 @@ destination_folder/
    - Enable/disable source file cleanup
 4. Click "Start Organization" to begin
 5. Monitor progress in the status bar
+
+Files whose date cannot be determined at all are placed in an `Unknown Date` / `Okänt datum` folder. A log of every run is written to `~/Library/Logs/Photo Organizer/` on macOS and `%LOCALAPPDATA%\PhotoOrganizer\Logs\` on Windows; if any file fails, a **Show errors** button appears with the details.
+
+## Development
+The logic lives in `organizer_core.py` (no GUI dependency) and the CustomTkinter window in `photo_organizer.py`. Run the tests with:
+
+```bash
+python tests/test_core.py
+```
 
 <img src="https://github.com/user-attachments/assets/49b17574-6bf4-4752-bfd2-76b7f1730748" alt="Photo & Video Organizer Interface" width="75%"/>
 
