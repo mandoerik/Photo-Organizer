@@ -68,8 +68,8 @@ app = BUNDLE(
         'CFBundleName': 'Photo Organizer',
         'CFBundleDisplayName': 'Photo Organizer',
         'CFBundleGetInfoString': 'Photo & Video Organization Tool',
-        'CFBundleVersion': '2.0',
-        'CFBundleShortVersionString': '2.0',
+        'CFBundleVersion': '2.1',
+        'CFBundleShortVersionString': '2.1',
         'NSHighResolutionCapable': True,
     }
 )
