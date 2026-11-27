@@ -219,6 +219,54 @@ check("validate same", core.validate_paths(src, [src]) is not None)
 check("validate inside", core.validate_paths(src, [os.path.join(src, "x")]) is not None)
 check("validate ok", core.validate_paths(src, [dst, ""]) is None)
 check("validate missing", core.validate_paths(os.path.join(tmp, "nope"), [dst]) is not None)
+check("validate source inside dest ok", core.validate_paths(os.path.join(src, "sub"), [src]) is None)
+
+# 21b. Source inside destination, move mode: sort a phone dump into the library
+import shutil  # noqa: E402
+lib = os.path.join(tmp, "lib")
+keep = os.path.join(lib, "2019", "July", "keep.jpg")
+os.makedirs(os.path.dirname(keep))
+make_jpeg(keep, original="2019:07:10 10:00:00")
+dump = os.path.join(lib, "Phone", "Recents")
+os.makedirs(dump)
+make_jpeg(os.path.join(dump, "a.jpg"), original="2022:02:02 02:02:02")
+shutil.copy2(keep, os.path.join(dump, "keep.jpg"))
+res8 = core.organize(core.Job(dump, lib, lib, core.extensions_for("all"), delete_source=True))
+check("inside: new file moved up", os.path.exists(os.path.join(lib, "2022", "February", "a.jpg")) and not os.path.exists(os.path.join(dump, "a.jpg")), f"{res8}")
+check("inside: identical dump copy removed", not os.path.exists(os.path.join(dump, "keep.jpg")))
+check("inside: library original kept", os.path.exists(keep))
+
+# 21c. Files already in the right folder are never deleted by a move
+stray = os.path.join(lib, "2019", "stray.jpg")
+make_jpeg(stray, original="2019:07:20 10:00:00")
+res9 = core.organize(core.Job(os.path.join(lib, "2019"), lib, lib, core.extensions_for("all"), delete_source=True))
+check("in place: file kept", os.path.exists(keep), f"{res9}")
+check("in place: counted as skipped", res9.skipped == 1 and res9.transferred == 1 and res9.errors == [], f"{res9}")
+check("in place: stray filed into July", os.path.exists(os.path.join(lib, "2019", "July", "stray.jpg")) and not os.path.exists(stray))
+selfcheck = os.path.join(lib, "selfcheck", "s.jpg")
+os.makedirs(os.path.dirname(selfcheck))
+make_jpeg(selfcheck, original="2020:01:01 00:00:00")
+check("resolve never returns self as duplicate", core.resolve_destination(os.path.dirname(selfcheck), selfcheck) is not None)
+
+# 21d. Case-insensitive volumes: 'april' on disk vs 'April' from the job
+if os.path.exists(os.path.join(lib, "2019", "JULY")):
+    lower = os.path.join(lib, "2018", "april", "x.jpg")
+    os.makedirs(os.path.dirname(lower))
+    make_jpeg(lower, original="2018:04:04 04:04:04")
+    res10 = core.organize(core.Job(os.path.join(lib, "2018"), lib, lib, core.extensions_for("all"), delete_source=True))
+    check("case-insensitive: file kept", os.path.exists(lower) and res10.skipped == 1 and res10.errors == [], f"{res10}")
+
+# 21e. Network shares without stable inodes: samefile always False
+_real_samefile = os.path.samefile
+os.path.samefile = lambda a, b: False
+try:
+    res11 = core.organize(core.Job(os.path.join(lib, "2019"), lib, lib, core.extensions_for("all"), delete_source=True))
+    check("no inodes: files in place kept", os.path.exists(keep) and os.path.exists(os.path.join(lib, "2019", "July", "stray.jpg")) and res11.skipped == 2 and res11.errors == [], f"{res11}")
+    if os.path.exists(os.path.join(lib, "2019", "JULY")):
+        res12 = core.organize(core.Job(os.path.join(lib, "2018"), lib, lib, core.extensions_for("all"), delete_source=True))
+        check("no inodes: case-variant folder kept", os.path.exists(os.path.join(lib, "2018", "april", "x.jpg")) and res12.skipped == 1, f"{res12}")
+finally:
+    os.path.samefile = _real_samefile
 
 # 22. Logging
 lp = core.configure_logging()

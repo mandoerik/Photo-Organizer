@@ -17,6 +17,7 @@ Photo Organizer is a lightweight Python tool that automatically organizes your p
 - 📅 Date taken from EXIF (photos) or the container's creation time (MP4/MOV), falling back to file modification time
 - 🔍 Preserves original metadata
 - 🔄 Skips files already present in the destination (content compared, not just name) and renames on real name clashes
+- 📂 The source may sit inside the destination, e.g. sort `Pictures/Phone/Recents` straight into `Pictures/<year>/<month>`; files already in the right folder are left alone
 - 🙈 Ignores hidden files such as macOS `._` sidecars
 - 📝 Writes a log and lists any failed files in the app
 - 🌐 Supports English and Swedish folder naming

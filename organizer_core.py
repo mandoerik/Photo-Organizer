@@ -12,6 +12,7 @@ import os
 import shutil
 import struct
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, List, Optional, Tuple
@@ -275,19 +276,51 @@ def files_identical(a: str, b: str) -> bool:
         return False
 
 
+def _path_key(path: str) -> str:
+    return unicodedata.normalize("NFC", os.path.realpath(path)).casefold()
+
+
+def same_file(a: str, b: str) -> bool:
+    """True if both paths point at the same file or folder.
+
+    Compares device and inode first. Network shares (SMB) do not always
+    report stable inodes, so paths that are equal after resolving links,
+    Unicode normalisation and case folding also count as the same
+    ('2019/april' vs '2019/April'). On a case-sensitive volume that can only
+    make a file stay where it is, never get deleted.
+    """
+    try:
+        if os.path.samefile(a, b):
+            return True
+    except OSError:
+        pass
+    return _path_key(a) == _path_key(b)
+
+
+def already_in_place(src_path: str, dest_dir: str) -> bool:
+    """True if `src_path` already sits directly in `dest_dir`.
+
+    Happens when the source folder lies inside the destination and a file is
+    already filed under the right year/month.
+    """
+    return same_file(os.path.dirname(os.path.abspath(src_path)), dest_dir)
+
+
 def resolve_destination(dest_dir: str, src_path: str) -> Optional[str]:
     """Pick a free destination path for `src_path` inside `dest_dir`.
 
     Returns None if a byte-identical copy already exists there (under the
     original name or any of the '_N' variants), so the caller can skip it
     instead of producing IMG_1.jpg, IMG_2.jpg duplicates on repeated runs.
+    The source file itself never counts as that copy: in move mode the
+    caller deletes the source when this returns None.
     """
     filename = os.path.basename(src_path)
     base, ext = os.path.splitext(filename)
     candidate = os.path.join(dest_dir, filename)
     counter = 1
     while os.path.exists(candidate):
-        if files_identical(src_path, candidate):
+        if not same_file(src_path, candidate) and files_identical(src_path, candidate):
             return None
         candidate = os.path.join(dest_dir, f"{base}_{counter}{ext}")
         counter += 1
@@ -336,7 +369,12 @@ def configure_logging() -> Optional[str]:
 # --- Validation -------------------------------------------------------------
 
 def validate_paths(source: str, destinations: List[str]) -> Optional[str]:
-    """Return an error message, or None if the layout is safe."""
+    """Return an error message, or None if the layout is safe.
+
+    The source may lie inside a destination (e.g. sort 'Pictures/Phone dump'
+    into 'Pictures/<year>/<month>'): the file list is collected before
+    anything moves, and files already in the right folder are left alone.
+    """
     source = os.path.realpath(source)
     if not os.path.isdir(source):
         return "Source folder does not exist."
@@ -344,12 +382,10 @@ def validate_paths(source: str, destinations: List[str]) -> Optional[str]:
         if not dest:
             continue
         dest = os.path.realpath(dest)
-        if source == dest:
+        if source == dest or same_file(source, dest):
             return "Source and destination cannot be the same."
         if dest.startswith(source + os.sep):
             return "Destination cannot be inside the source folder."
-        if source.startswith(dest + os.sep):
-            return "Source is inside the destination."
     return None
 
 
@@ -406,20 +442,24 @@ def organize(
             dest_dir = os.path.join(dest_base, *date_folder(date, job.language))
             os.makedirs(dest_dir, exist_ok=True)
 
-            dest_path = resolve_destination(dest_dir, file_path)
-            if dest_path is None:
+            if already_in_place(file_path, dest_dir):
                 result.skipped += 1
-                if job.delete_source:
-                    os.remove(file_path)
-                    log.info("Identical copy already in %s, removed source %s", dest_dir, file_path)
-                else:
-                    log.info("Identical copy already in %s, skipped %s", dest_dir, file_path)
+                log.info("Already in place, left alone: %s", file_path)
             else:
-                if job.delete_source:
-                    shutil.move(file_path, dest_path)
+                dest_path = resolve_destination(dest_dir, file_path)
+                if dest_path is None:
+                    result.skipped += 1
+                    if job.delete_source:
+                        os.remove(file_path)
+                        log.info("Identical copy already in %s, removed source %s", dest_dir, file_path)
+                    else:
+                        log.info("Identical copy already in %s, skipped %s", dest_dir, file_path)
                 else:
-                    shutil.copy2(file_path, dest_path)
-                result.transferred += 1
+                    if job.delete_source:
+                        shutil.move(file_path, dest_path)
+                    else:
+                        shutil.copy2(file_path, dest_path)
+                    result.transferred += 1
         except Exception as e:
             message = f"{type(e).__name__}: {e}"
             result.errors.append((file_path, message))
