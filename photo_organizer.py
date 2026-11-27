@@ -29,6 +29,11 @@ from tkinter import filedialog, StringVar, BooleanVar
 import organizer_core as core
 
 
+# Room left on screen for the menu bar, title bar and Dock / taskbar (points)
+SCREEN_MARGIN = (40, 140)
+# Smallest UI scale used on small screens before the window may overflow
+MIN_UI_SCALE = 0.6
+
 # --- Color Palette ---
 COLORS = {
     "accent": "#4A90D9",
@@ -55,8 +60,9 @@ class PhotoOrganizerApp:
 
         self.root = ctk.CTk()
         self.root.title("Photo & Video Organizer")
-        self.root.geometry("720x860")
-        self.root.minsize(680, 820)
+        # The window always takes the size of its content (no scrolling);
+        # _fit_to_screen() shrinks the whole UI on screens that are too small.
+        self.root.resizable(False, False)
 
         # App information
         self.app_info = {
@@ -91,12 +97,13 @@ class PhotoOrganizerApp:
 
         self._build_ui()
         self.detect_system_language()
+        self._fit_to_screen()
 
     # ------------------------------------------------------------------ UI --
     def _build_ui(self):
         """Build the complete modern UI."""
-        # Main scrollable container
-        self.main_frame = ctk.CTkScrollableFrame(
+        # Main container; the window sizes itself to it
+        self.main_frame = ctk.CTkFrame(
             self.root, fg_color="transparent",
         )
         self.main_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
@@ -170,6 +177,41 @@ class PhotoOrganizerApp:
 
         # ---- Action Buttons ----
         self._action_buttons(row)
+
+    def _content_size(self):
+        """Natural (width, height) of the window's content in screen points."""
+        self.root.update_idletasks()
+        return self.root.winfo_reqwidth(), self.root.winfo_reqheight()
+
+    def _fit_to_screen(self):
+        """Let the window take its content's size, scaled down if the screen is too small.
+
+        Measured with the optional rows (video destination, error button)
+        shown, so the window still fits when they appear later.
+        """
+        self._video_dest_label.grid()
+        self._video_row_frame.grid()
+        self.errors_button.grid()
+        width, height = self._content_size()
+
+        avail_w = self.root.winfo_screenwidth() - SCREEN_MARGIN[0]
+        avail_h = self.root.winfo_screenheight() - SCREEN_MARGIN[1]
+        factor = min(1.0, avail_w / width, avail_h / height)
+        if factor < 1.0:
+            ctk.set_widget_scaling(max(MIN_UI_SCALE, int(factor * 20) / 20))
+            # CustomTkinter pins min and max size to the old window size while
+            # it rescales (and only releases them a second later); release now.
+            self.root.tk.call("wm", "minsize", self.root._w, 1, 1)
+            self.root.tk.call("wm", "maxsize", self.root._w,
+                              self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+            self.root.update_idletasks()
+        # Hidden only now: rescaling re-applies each widget's last grid() call
+        self._video_dest_label.grid_remove()
+        self._video_row_frame.grid_remove()
+        self.errors_button.grid_remove()
+        # An empty geometry hands the size back to the content, so the window
+        # also grows and shrinks when the video destination row is toggled.
+        self.root.tk.call("wm", "geometry", self.root._w, "")
 
     # -- Cards -----------------------------------------------------------------
 
